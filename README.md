@@ -2,7 +2,9 @@
 
 A Python pipeline built on [FastF1](https://github.com/theOehrly/Fast-F1) that pulls official Formula 1 timing data, cleans it, and compares sector times across drivers and sessions. The output is a set of tidy CSVs that feed a Tableau workbook for exploration, plus static charts for a quick look.
 
-![Monza qualifying sector gaps](data/2024/img/italian_q_sector_heatmap.png)
+**Interactive dashboard on Tableau Public: [F1 Sector Analysis 2024](https://public.tableau.com/app/profile/mayank.manohar.polepalli/viz/F1SectorAnalysis2024/Overview)**
+
+[![Tableau dashboard: sector gaps, time left in the lap, and sector times by lap](docs/img/tableau_overview.png)](https://public.tableau.com/app/profile/mayank.manohar.polepalli/viz/F1SectorAnalysis2024/Overview)
 
 ## What it does
 
@@ -77,7 +79,7 @@ All written to `--out` (default `output/`). Times are in seconds.
 | `session_comparison.csv` | driver, event, sector | Each driver's sector deltas side by side across sessions (qualifying vs race) |
 | `cleaning_log.csv` | session, reason | Lap counts per exclusion rule and per imputed column |
 
-The CSVs from the 2024 run are committed under [`data/2024`](data/2024) so the Tableau workbook can be rebuilt without running Python. See [TABLEAU.md](TABLEAU.md) for the dashboard layout.
+The CSVs from the 2024 run are committed under [`data/2024`](data/2024) and feed the [published Tableau dashboard](https://public.tableau.com/app/profile/mayank.manohar.polepalli/viz/F1SectorAnalysis2024/Overview). See [TABLEAU.md](TABLEAU.md) for how it is built.
 
 ## Usage
 

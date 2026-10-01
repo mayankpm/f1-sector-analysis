@@ -2,6 +2,8 @@
 
 The pipeline writes tidy CSVs designed to drop straight into Tableau (Desktop or Public). This page describes the data model and the worksheets used for exploration. The 2024 sample data is in [`data/2024`](data/2024).
 
+Published version: [F1 Sector Analysis 2024 on Tableau Public](https://public.tableau.com/app/profile/mayank.manohar.polepalli/viz/F1SectorAnalysis2024/Overview). It contains worksheets 1, 2 and 4 below on one dashboard, with Event and Session filters shared across sheets.
+
 ## Data model
 
 Connect to the folder as a text file source and add the tables below. Relate them (Tableau relationships, not joins) on the listed fields so a single Event and Session filter drives every sheet.
