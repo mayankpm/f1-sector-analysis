@@ -29,7 +29,9 @@ Rules run in order and the first match wins.
 | `slow_lap` | Slower than 107% of the driver's own best clean lap in that session (cool down laps, wet laps, damage) |
 | `sector_outlier` | A sector more than 3.5 robust standard deviations slower than the driver's median for that stint |
 
-**Imputation.** When exactly one of S1, S2, S3 and the lap time is missing, it is rebuilt from the other three, since the lap time is the sum of the sectors. FastF1 often has no S1 for the first lap after a pit stop or a restart; in the 2024 sample below, 59 race laps got their S1 back this way. Imputed values are marked in the `Imputed` column.
+**Imputation.** When exactly one of S1, S2, S3 and the lap time is missing, it is rebuilt from the other three, since the lap time is the sum of the sectors. Imputed values are marked in the `Imputed` column, and the cleaning log counts them twice: `imputed_<col>` for every rebuilt lap and `imputed_<col>_used` for the ones that pass every rule and so reach a metric.
+
+In practice the data is only ever missing a value on laps that are excluded anyway. In the sample below, 68 laps were imputed (59 race S1 times, 9 lap times) and all 68 were later excluded as standing starts, safety car laps or pit laps. Over the full 2024 season (see below) it is 716 imputed laps and 0 used. FastF1 drops S1 on lap 1 and on the lap after a pit stop or restart, most likely because those laps do not begin with a normal crossing of the timing line; it never dropped a sector on a clean racing lap. Imputation stays in as a safeguard, so a lap with a gap is judged on its pace by the later rules instead of being labelled `missing_timing`, and so `sector_laps.csv` has complete lap traces when Tableau shows excluded laps.
 
 **Outlier design choices.**
 * The robust z score uses the median and MAD rather than mean and standard deviation, so the outliers being hunted do not inflate the threshold.
@@ -57,6 +59,30 @@ f1sector --year 2024 --event Bahrain --event Monaco --event British --event Ital
 The Silverstone race was run in changing wet conditions, which is why so many of its laps fall outside 107% of each driver's best. In Monaco, after the lap 1 red flag, most of the field ran one set of hard tyres to the finish at a managed pace (the median of these cut laps is 1:21.3). The late push laps set each driver's best, so the managed laps fall outside 107%.
 
 **Sanity check.** Pole times and the race fastest lap for all four events match the official results: pole for Norris at Monza (1:19.327), Russell at Silverstone (1:25.819) and Leclerc at Monaco (1:10.270), and fastest laps for Verstappen in Bahrain (1:32.608), Sainz at Silverstone (1:28.293), Norris at Monza (1:21.432) and Hamilton in Monaco (1:14.165). In Bahrain the pipeline's quickest qualifying lap is Leclerc's 1:29.165 from Q2, 0.014 s faster than Verstappen's pole lap in Q3, because the summary covers every lap of the session.
+
+### Full 2024 season check
+
+The same rules, run unchanged over every 2024 qualifying, sprint and race session (24 events, 54 sessions):
+
+```
+f1sector --year 2024 --event 1 --event 2 ... --event 24 --session Q --session S --session R
+36612 laps loaded, 24076 used for pace (12536 excluded)
+```
+
+| Reason | Laps |
+|---|---:|
+| included | 24076 |
+| pit_in_out | 6141 |
+| slow_lap | 1912 |
+| track_status | 1878 |
+| sector_outlier | 1733 |
+| deleted | 475 |
+| standing_start | 376 |
+| timing_mismatch | 13 |
+| missing_timing | 8 |
+| imputed (S1 450, lap time 266) | 716, of which 0 used |
+
+Every rule fires somewhere in the season. The two timing rules never trigger in the four event sample but catch 21 laps across the year where the sectors do not add up to the lap time or two values are missing at once. The CSVs for this run are not committed (about 13 MB); the command above rebuilds them from the FastF1 cache.
 
 ### A few things the data shows
 
@@ -91,7 +117,7 @@ f1sector --year 2024 --event Bahrain --event 8 --session Q --session R --plots
 f1sector --year 2023 --event Japan --session FP2 --session Q --out output/suzuka
 ```
 
-`--event` takes a name or a round number. `--session` defaults to Q and R. `--slow-factor` and `--outlier-z` tune the cleaning thresholds. The first run of a session downloads it (about 10 s each); later runs read the FastF1 cache in `cache/`.
+`--event` takes a name or a round number (round numbers are passed to FastF1 as integers; as strings it would fuzzy match them to an event name). Asking for the same session twice, for example `--event Bahrain --event 1`, loads it once. `--session` defaults to Q and R. `--slow-factor` and `--outlier-z` tune the cleaning thresholds. The first run of a session downloads it (about 10 s each); later runs read the FastF1 cache in `cache/`.
 
 ## Tests
 

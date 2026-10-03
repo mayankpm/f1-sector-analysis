@@ -1,6 +1,13 @@
 import pandas as pd
 
-from f1sector.load import laps_to_frame
+from f1sector.load import laps_to_frame, resolve_event
+
+
+def test_round_numbers_become_ints_so_fastf1_does_not_fuzzy_match_them():
+    assert resolve_event("8") == 8
+    assert resolve_event(" 24 ") == 24
+    assert resolve_event("Monaco") == "Monaco"
+    assert resolve_event(3) == 3
 
 
 def test_laps_to_frame_converts_times_and_pit_flags():

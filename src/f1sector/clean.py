@@ -127,14 +127,24 @@ def clean_laps(
 
 
 def cleaning_log(df: pd.DataFrame) -> pd.DataFrame:
-    """Lap counts per session and exclusion reason, plus imputation counts."""
+    """Lap counts per session and exclusion reason, plus imputation counts.
+
+    ``imputed_<col>`` counts every lap that had ``<col>`` rebuilt; ``imputed_<col>_used``
+    counts the ones that also passed every rule, i.e. imputed values that reach a metric.
+    Most imputed laps are out laps or restarts, which the rules exclude anyway.
+    """
     counts = (
         df.assign(Reason=df["ExcludeReason"].replace("", "included"))
         .groupby(SESSION_KEYS + ["Reason"]).size().rename("Laps").reset_index()
     )
+    imputed_rows = df[df["Imputed"] != ""]
     imputed = (
-        df[df["Imputed"] != ""]
-        .assign(Reason=lambda d: "imputed_" + d["Imputed"])
+        imputed_rows.assign(Reason=lambda d: "imputed_" + d["Imputed"])
         .groupby(SESSION_KEYS + ["Reason"]).size().rename("Laps").reset_index()
     )
-    return pd.concat([counts, imputed], ignore_index=True).sort_values(SESSION_KEYS + ["Reason"])
+    used = (
+        imputed_rows[imputed_rows["Included"]]
+        .assign(Reason=lambda d: "imputed_" + d["Imputed"] + "_used")
+        .groupby(SESSION_KEYS + ["Reason"]).size().rename("Laps").reset_index()
+    )
+    return pd.concat([counts, imputed, used], ignore_index=True).sort_values(SESSION_KEYS + ["Reason"])

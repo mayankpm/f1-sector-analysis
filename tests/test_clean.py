@@ -136,5 +136,18 @@ def test_cleaning_log_counts_every_lap(laps_factory):
     assert counts["standing_start"] == 1
     assert counts["pit_in_out"] == 1
     assert counts["imputed_S3"] == 1
+    assert counts["imputed_S3_used"] == 1
     assert counts["included"] == len(df) - 2
     assert log.loc[~log["Reason"].str.startswith("imputed"), "Laps"].sum() == len(df)
+
+
+def test_cleaning_log_separates_imputed_laps_that_are_excluded(laps_factory):
+    df = laps_factory(session="R")
+    df.loc[0, "S1"] = np.nan  # lap 1: imputed, then excluded as a standing start
+    df.loc[5, "S2"] = np.nan  # lap 6: imputed and used
+    log = cleaning_log(clean_laps(df))
+    counts = dict(zip(log["Reason"], log["Laps"]))
+    assert counts["imputed_S1"] == 1
+    assert "imputed_S1_used" not in counts
+    assert counts["imputed_S2"] == 1
+    assert counts["imputed_S2_used"] == 1

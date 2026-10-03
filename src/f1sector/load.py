@@ -52,7 +52,7 @@ def load_session(year: int, event: str, session: str) -> pd.DataFrame:
     """Download (or read from cache) one session and return its flattened laps."""
     import fastf1
 
-    s = fastf1.get_session(year, event, session)
+    s = fastf1.get_session(year, resolve_event(event), session)
     # Messages are needed for FastF1 to mark laps deleted for track limits.
     s.load(laps=True, telemetry=False, weather=False, messages=True)
     name = s.event["EventName"].replace(" Grand Prix", "")
@@ -60,14 +60,30 @@ def load_session(year: int, event: str, session: str) -> pd.DataFrame:
     return laps_to_frame(s.laps, year, name, session.upper())
 
 
+def resolve_event(event: str | int) -> str | int:
+    """Round numbers arrive from the command line as strings. FastF1 fuzzy matches any
+    string against event names, so "8" would silently load the wrong race; pass an int."""
+    if isinstance(event, str) and event.strip().isdigit():
+        return int(event)
+    return event
+
+
 def load_sessions(year: int, events: list[str], sessions: list[str]) -> pd.DataFrame:
     frames = []
+    seen = set()
     for event in events:
         for session in sessions:
             try:
-                frames.append(load_session(year, event, session))
+                frame = load_session(year, event, session)
             except Exception as exc:  # one bad session should not sink the batch
                 log.warning("skipping %s %s %s: %s", year, event, session, exc)
+                continue
+            key = (frame["Event"].iat[0], frame["Session"].iat[0]) if len(frame) else None
+            if key in seen:  # e.g. "Bahrain" and "1" both requested
+                log.warning("skipping duplicate %s %s %s", year, *key)
+                continue
+            seen.add(key)
+            frames.append(frame)
     if not frames:
         raise RuntimeError("no sessions could be loaded")
     return pd.concat(frames, ignore_index=True)
