@@ -1,5 +1,7 @@
 # F1 Sector Analysis
 
+[![CI](https://github.com/mayankpm/f1-sector-analysis/actions/workflows/ci.yml/badge.svg)](https://github.com/mayankpm/f1-sector-analysis/actions/workflows/ci.yml)
+
 A Python pipeline built on [FastF1](https://github.com/theOehrly/Fast-F1) that pulls official Formula 1 timing data, cleans it, and compares sector times across drivers and sessions. The output is a set of tidy CSVs that feed a Tableau workbook for exploration, plus static charts for a quick look.
 
 **Interactive dashboard on Tableau Public: [F1 Sector Analysis 2024](https://public.tableau.com/app/profile/mayank.manohar.polepalli/viz/F1SectorAnalysis2024/Overview)**
