@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 
 
+# Builds synthetic laps in load.laps_to_frame's shape; sectors 30 + 40 + 20 s plus small noise.
 def make_laps(driver="AAA", team="T1", session="R", n=12, s=(30.0, 40.0, 20.0),
               noise=0.05, stint=1, start_lap=1, seed=0, **overrides):
     """Synthetic laps in the shape produced by ``load.laps_to_frame``."""
@@ -24,6 +25,7 @@ def make_laps(driver="AAA", team="T1", session="R", n=12, s=(30.0, 40.0, 20.0),
     return df
 
 
+# Fixture: hands make_laps to any test, so each test builds the exact laps it needs.
 @pytest.fixture
 def laps_factory():
     return make_laps

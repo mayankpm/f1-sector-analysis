@@ -15,6 +15,7 @@ Connect to the folder as a text file source and add the tables below. Relate the
 | `driver_summary.csv` | Year, Event, Session, Driver |
 | `stint_trends.csv` | Year, Event, Session, Driver |
 | `cleaning_log.csv` | Year, Event, Session |
+| `source_validation.csv` | Year, Event, Session, Driver |
 
 Set `LapNumber`, `Stint` and `RankBest` to Dimension (discrete) and `Included` to a Boolean filter.
 
@@ -52,6 +53,10 @@ Set `LapNumber`, `Stint` and `RankBest` to Dimension (discrete) and `Included` t
 **7. Cleaning audit** (`cleaning_log`)
 * Columns: SUM(`Laps`). Rows: `Event`, `Session`. Color: `Reason`. Marks: stacked Bar.
 * Answers: how many laps each rule removed, so the pace comparisons can be trusted.
+
+**8. Source checks** (`source_validation`)
+* Columns: COUNT(`Driver`). Rows: `Check`. Color: `Result`. Marks: stacked Bar. Tooltip: `Event`, `Driver`, `Official`, `Feed`, `Note`.
+* Answers: how often the lap timing agrees with the official classification, and what explains each disagreement.
 
 ## Dashboard
 

@@ -22,6 +22,7 @@ _KEEP_COLS = [
 ]
 
 
+# Load step: point FastF1 at a local cache folder so reruns read from disk, not the network.
 def enable_cache(path: str | Path) -> None:
     import fastf1
 
@@ -30,6 +31,7 @@ def enable_cache(path: str | Path) -> None:
     fastf1.set_log_level("WARNING")
 
 
+# Load step: turn FastF1's Laps table into our fixed lap schema (times in seconds, one InPit flag).
 def laps_to_frame(laps: pd.DataFrame, year: int, event: str, session: str) -> pd.DataFrame:
     """Flatten a FastF1 Laps frame. Kept separate from I/O so it can be tested."""
     out = laps[_KEEP_COLS].copy()
@@ -48,8 +50,33 @@ def laps_to_frame(laps: pd.DataFrame, year: int, event: str, session: str) -> pd
     return out.reset_index(drop=True)
 
 
-def load_session(year: int, event: str, session: str) -> pd.DataFrame:
-    """Download (or read from cache) one session and return its flattened laps."""
+# Load step: flatten the official classification, one row per driver, for validation.
+def results_to_frame(results: pd.DataFrame, year: int, event: str, session: str) -> pd.DataFrame:
+    """Flatten the official classification, a second source independent of the lap timing.
+
+    ``OfficialBest`` is a driver's best counted qualifying time (min of Q1, Q2, Q3).
+    ``RaceTime`` is the winner's total time; FastF1 stores gaps for everyone else, so it is
+    left empty for them.
+    """
+    out = pd.DataFrame({
+        "Driver": results["Abbreviation"],
+        "Position": results["Position"],
+        "Status": results["Status"].fillna("").astype(str),
+        "Laps": results["Laps"],
+    })
+    best = pd.concat([results[q].dt.total_seconds() for q in ("Q1", "Q2", "Q3")], axis=1)
+    out["OfficialBest"] = best.min(axis=1)
+    out["RaceTime"] = results["Time"].dt.total_seconds().where(results["Position"] == 1)
+    out.insert(0, "Session", session)
+    out.insert(0, "Event", event)
+    out.insert(0, "Year", year)
+    return out.reset_index(drop=True)
+
+
+# Load step: fetch one session (laps and race control messages); return laps and classification.
+def load_session(year: int, event: str, session: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Download (or read from cache) one session. Returns its flattened laps and its
+    official classification."""
     import fastf1
 
     s = fastf1.get_session(year, resolve_event(event), session)
@@ -57,9 +84,11 @@ def load_session(year: int, event: str, session: str) -> pd.DataFrame:
     s.load(laps=True, telemetry=False, weather=False, messages=True)
     name = s.event["EventName"].replace(" Grand Prix", "")
     log.info("loaded %s %s %s: %d laps", year, name, s.name, len(s.laps))
-    return laps_to_frame(s.laps, year, name, session.upper())
+    code = session.upper()
+    return laps_to_frame(s.laps, year, name, code), results_to_frame(s.results, year, name, code)
 
 
+# Load step: pass round numbers to FastF1 as ints so they are not fuzzy-matched to an event name.
 def resolve_event(event: str | int) -> str | int:
     """Round numbers arrive from the command line as strings. FastF1 fuzzy matches any
     string against event names, so "8" would silently load the wrong race; pass an int."""
@@ -68,13 +97,15 @@ def resolve_event(event: str | int) -> str | int:
     return event
 
 
-def load_sessions(year: int, events: list[str], sessions: list[str]) -> pd.DataFrame:
-    frames = []
+# Load step: load every requested event x session, skipping failures and duplicates, and stack them.
+def load_sessions(year: int, events: list[str], sessions: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Laps and official classification for every requested session, concatenated."""
+    frames, classes = [], []
     seen = set()
     for event in events:
         for session in sessions:
             try:
-                frame = load_session(year, event, session)
+                frame, classification = load_session(year, event, session)
             except Exception as exc:  # one bad session should not sink the batch
                 log.warning("skipping %s %s %s: %s", year, event, session, exc)
                 continue
@@ -84,6 +115,7 @@ def load_sessions(year: int, events: list[str], sessions: list[str]) -> pd.DataF
                 continue
             seen.add(key)
             frames.append(frame)
+            classes.append(classification)
     if not frames:
         raise RuntimeError("no sessions could be loaded")
-    return pd.concat(frames, ignore_index=True)
+    return pd.concat(frames, ignore_index=True), pd.concat(classes, ignore_index=True)

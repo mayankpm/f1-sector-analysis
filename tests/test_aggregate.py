@@ -9,6 +9,7 @@ from f1sector.clean import clean_laps
 from f1sector.export import analyse, write_csvs
 
 
+# Fixture: three drivers, two teams, a Q and an R session, no noise, so every value is exact.
 @pytest.fixture
 def grid(laps_factory):
     """Three drivers, two teams, a qualifying and a race, no noise so values are exact."""
@@ -22,17 +23,20 @@ def grid(laps_factory):
     return clean_laps(pd.concat(frames, ignore_index=True))
 
 
+# Helper: the first row of a table matching the given column values.
 def row(df, **match):
     mask = np.logical_and.reduce([df[k] == v for k, v in match.items()])
     return df[mask].iloc[0]
 
 
+# Melting the lap table gives exactly three rows per lap, one per sector.
 def test_sector_long_has_three_rows_per_lap(grid):
     long = sector_long(grid)
     assert len(long) == 3 * len(grid)
     assert set(long["Sector"]) == {"S1", "S2", "S3"}
 
 
+# Best, DeltaBest and RankBest come out exactly as the synthetic sector times imply.
 def test_sector_summary_deltas(grid):
     s = sector_summary(grid)
     r = row(s, Session="Q", Driver="BBB", Sector="S1")
@@ -44,6 +48,7 @@ def test_sector_summary_deltas(grid):
     assert row(s, Session="Q", Driver="AAA", Sector="S2")["DeltaBest"] == pytest.approx(0.1)
 
 
+# Teammates get equal and opposite gaps; a driver with no teammate gets NaN.
 def test_teammate_delta(grid):
     s = sector_summary(grid)
     assert row(s, Session="Q", Driver="AAA", Sector="S1")["DeltaTeammateBest"] == pytest.approx(-0.2)
@@ -52,6 +57,7 @@ def test_teammate_delta(grid):
     assert np.isnan(row(s, Session="Q", Driver="CCC", Sector="S1")["DeltaTeammateBest"])
 
 
+# An impossibly fast out lap can't set a driver's best sector.
 def test_summary_ignores_excluded_laps(laps_factory):
     df = laps_factory(session="Q", noise=0)
     df.loc[2, ["S1", "LapTime"]] = [25.0, 85.0]  # impossibly fast, but it is an out lap
@@ -61,6 +67,7 @@ def test_summary_ignores_excluded_laps(laps_factory):
     assert row(s, Sector="S1")["Laps"] == len(df) - 1
 
 
+# Three laps with different best sectors: theoretical best and gain are exact.
 def test_theoretical_best(laps_factory):
     df = laps_factory(session="Q", noise=0, n=3)
     # Each lap has a different best sector: theoretical best combines them.
@@ -75,6 +82,7 @@ def test_theoretical_best(laps_factory):
     assert d["TheoreticalGain"] == pytest.approx(0.6)
 
 
+# Gap to pole, weakest sector and lap counts for a known slower driver.
 def test_driver_summary_weakest_sector_and_gap(grid):
     d = driver_summary(grid, sector_summary(grid))
     ccc = row(d, Session="Q", Driver="CCC")
@@ -83,6 +91,7 @@ def test_driver_summary_weakest_sector_and_gap(grid):
     assert ccc["TotalLaps"] == 12 and ccc["CleanLaps"] == 12
 
 
+# A built-in +0.05 s per lap in S3 comes back as a 0.05 slope.
 def test_stint_slope_recovers_known_degradation(laps_factory):
     df = laps_factory(session="R", n=20, noise=0)
     df["S3"] = 20.0 + 0.05 * df["TyreLife"]  # 50 ms per lap in S3
@@ -94,17 +103,20 @@ def test_stint_slope_recovers_known_degradation(laps_factory):
     assert t.loc[0, "LapTimeSlope"] == pytest.approx(0.05)
 
 
+# Stints under 5 laps and qualifying sessions get no slope.
 def test_stint_trends_skip_short_stints_and_qualifying(laps_factory):
     df = pd.concat([laps_factory(session="R", n=4), laps_factory(session="Q", n=20)])
     assert stint_trends(clean_laps(df)).empty
 
 
+# Each driver-sector gets one row with Q and R columns side by side.
 def test_session_comparison_is_wide(grid):
     wide = session_comparison(sector_summary(grid))
     assert {"DeltaBest_Q", "DeltaBest_R", "RankBest_Q"} <= set(wide.columns)
     assert len(wide) == 3 * 3
 
 
+# analyse() + write_csvs() write exactly the six CSVs, and they read back intact.
 def test_end_to_end_csv_export(grid, tmp_path, laps_factory):
     raw = pd.concat([laps_factory("AAA", session="R", n=15),
                      laps_factory("BBB", "T2", session="R", n=15, seed=2)])

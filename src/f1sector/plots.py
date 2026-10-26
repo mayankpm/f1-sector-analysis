@@ -31,6 +31,7 @@ plt.rcParams.update({
 })
 
 
+# Chart: drivers x sectors heatmap of the gap to the fastest time in each sector.
 def sector_heatmap(summary: pd.DataFrame, event: str, session: str, path: Path,
                    top: int = 20) -> None:
     """Drivers by sector, shaded by gap to the fastest time in that sector."""
@@ -57,6 +58,7 @@ def sector_heatmap(summary: pd.DataFrame, event: str, session: str, path: Path,
     plt.close(fig)
 
 
+# Chart: clean race sector times by lap for a few drivers, broken at pit stops.
 def stint_trend(sector_laps: pd.DataFrame, event: str, drivers: list[str], path: Path,
                 session: str = "R") -> None:
     """Clean race laps: sector time against lap number, one panel per sector."""
@@ -82,6 +84,7 @@ def stint_trend(sector_laps: pd.DataFrame, event: str, drivers: list[str], path:
     plt.close(fig)
 
 
+# Chart: how much each driver's best lap trails the sum of their best sectors.
 def theoretical_gain(drivers: pd.DataFrame, event: str, session: str, path: Path,
                      top: int = 20) -> None:
     """Time left on the table: best lap minus the sum of the driver's best sectors."""

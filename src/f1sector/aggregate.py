@@ -11,6 +11,7 @@ from f1sector.clean import DRIVER_KEYS, RACE_SESSIONS, SESSION_KEYS
 MIN_STINT_LAPS = 5
 
 
+# Aggregate step: one row per lap and sector, with gaps to the driver's and session's best sector.
 def sector_long(df: pd.DataFrame) -> pd.DataFrame:
     """One row per lap and sector. Keeps excluded laps so they can be filtered, not lost."""
     id_cols = [c for c in df.columns if c not in SECTORS]
@@ -24,6 +25,7 @@ def sector_long(df: pd.DataFrame) -> pd.DataFrame:
     return long.sort_values(DRIVER_KEYS + ["LapNumber", "Sector"]).reset_index(drop=True)
 
 
+# Aggregate step: per driver, session and sector stats, gaps to the field and to the teammate.
 def sector_summary(df: pd.DataFrame) -> pd.DataFrame:
     """Per driver, session and sector: distribution of clean sector times and deltas."""
     long = sector_long(df)
@@ -55,6 +57,7 @@ def sector_summary(df: pd.DataFrame) -> pd.DataFrame:
     return out.sort_values(sess + ["RankBest"]).reset_index(drop=True)
 
 
+# Aggregate step: per driver and session best lap, theoretical best, gap to pole, weakest sector.
 def driver_summary(df: pd.DataFrame, summary: pd.DataFrame) -> pd.DataFrame:
     """Per driver and session: best lap, theoretical best from best sectors, weakest sector."""
     clean = df[df["Included"]]
@@ -80,6 +83,7 @@ def driver_summary(df: pd.DataFrame, summary: pd.DataFrame) -> pd.DataFrame:
     return out.sort_values(SESSION_KEYS + ["BestLap"]).reset_index(drop=True)
 
 
+# Aggregate step: per race stint, slope of each sector and lap time against tyre age.
 def stint_trends(df: pd.DataFrame, min_laps: int = MIN_STINT_LAPS) -> pd.DataFrame:
     """Race only: least squares slope of each sector time against tyre age, per stint.
 
@@ -104,6 +108,7 @@ def stint_trends(df: pd.DataFrame, min_laps: int = MIN_STINT_LAPS) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
+# Aggregate step: put each driver's sector deltas for every session of an event side by side.
 def session_comparison(summary: pd.DataFrame) -> pd.DataFrame:
     """Wide view of each driver's sector deltas across the sessions of one event."""
     wide = summary.pivot_table(

@@ -5,10 +5,12 @@ import pytest
 from f1sector.clean import clean_laps, cleaning_log, impute_single_missing, robust_z
 
 
+# Helper: the ExcludeReason given to one lap number.
 def reason_of(df, lap):
     return df.loc[df["LapNumber"] == lap, "ExcludeReason"].item()
 
 
+# Clean laps are all kept, except lap 1 of a race (standing start).
 def test_clean_session_keeps_everything_but_race_lap_one(laps_factory):
     out = clean_laps(laps_factory(session="Q"))
     assert out["Included"].all()
@@ -18,6 +20,7 @@ def test_clean_session_keeps_everything_but_race_lap_one(laps_factory):
     assert out["Included"].sum() == len(out) - 1
 
 
+# A single missing sector is rebuilt to its true value and marked as imputed.
 def test_imputes_single_missing_sector_from_lap_time(laps_factory):
     df = laps_factory(session="Q")
     expected = df.loc[3, "S1"]
@@ -28,6 +31,7 @@ def test_imputes_single_missing_sector_from_lap_time(laps_factory):
     assert (out.drop(index=3)["Imputed"] == "").all()
 
 
+# A missing lap time is rebuilt as the sum of the three sectors.
 def test_imputes_missing_lap_time_from_sectors(laps_factory):
     df = laps_factory(session="Q")
     expected = df.loc[2, "LapTime"]
@@ -37,6 +41,7 @@ def test_imputes_missing_lap_time_from_sectors(laps_factory):
     assert out.loc[2, "Imputed"] == "LapTime"
 
 
+# Two missing values can't be solved, so the lap is tagged missing_timing.
 def test_two_missing_values_are_not_imputed(laps_factory):
     df = laps_factory(session="Q")
     df.loc[4, ["S1", "S2"]] = np.nan
@@ -45,6 +50,7 @@ def test_two_missing_values_are_not_imputed(laps_factory):
     assert reason_of(out, 5) == "missing_timing"
 
 
+# A rebuild that would give a negative sector is refused (corrupt row).
 def test_rejects_negative_imputation(laps_factory):
     df = laps_factory(session="Q")
     df.loc[1, "S1"] = np.nan
@@ -53,6 +59,7 @@ def test_rejects_negative_imputation(laps_factory):
     assert np.isnan(out.loc[1, "S1"])
 
 
+# Each flag rule (deleted, pit, yellow, VSC, safety car) tags exactly the broken lap.
 @pytest.mark.parametrize("column, value, reason", [
     ("Deleted", True, "deleted"),
     ("InPit", True, "pit_in_out"),
@@ -68,6 +75,7 @@ def test_flag_rules(laps_factory, column, value, reason):
     assert out["Included"].sum() == len(df) - 1
 
 
+# A lap breaking three rules gets the first one in priority order.
 def test_first_matching_rule_wins(laps_factory):
     df = laps_factory(session="Q")
     df.loc[5, ["Deleted", "InPit"]] = True
@@ -75,12 +83,14 @@ def test_first_matching_rule_wins(laps_factory):
     assert reason_of(clean_laps(df), 6) == "deleted"
 
 
+# Sectors that don't add up to the lap time (+0.5 s) are tagged timing_mismatch.
 def test_timing_mismatch(laps_factory):
     df = laps_factory(session="Q")
     df.loc[7, "LapTime"] += 0.5
     assert reason_of(clean_laps(df), 8) == "timing_mismatch"
 
 
+# 107% is judged against each driver's own best, not the field's.
 def test_slow_lap_uses_drivers_own_best(laps_factory):
     df = laps_factory(session="Q")
     df.loc[3, ["S1", "S2", "S3"]] = [40.0, 50.0, 25.0]  # 115 s against a 90 s best
@@ -93,6 +103,7 @@ def test_slow_lap_uses_drivers_own_best(laps_factory):
     assert out.loc[out["Driver"] == "BBB", "Included"].all()
 
 
+# A lap inside 107% with one bad sector is caught as a sector outlier.
 def test_sector_outlier_within_threshold_lap(laps_factory):
     df = laps_factory(session="Q", n=15, noise=0.02)
     df.loc[6, "S2"] += 1.5  # well inside 107% but far outside the driver's S2 spread
@@ -102,6 +113,7 @@ def test_sector_outlier_within_threshold_lap(laps_factory):
     assert out["Included"].sum() == len(df) - 1
 
 
+# An unusually fast lap is kept: only the slow side is flagged.
 def test_fast_push_lap_is_not_an_outlier(laps_factory):
     df = laps_factory(session="R", n=20, noise=0.05)
     df.loc[15, ["S1", "S2", "S3"]] -= [0.8, 1.2, 0.6]  # late fastest lap attempt
@@ -111,6 +123,7 @@ def test_fast_push_lap_is_not_an_outlier(laps_factory):
     assert out["Included"].sum() == len(df) - 1  # only the standing start is dropped
 
 
+# A faster second stint on new tyres isn't mistaken for outliers.
 def test_outliers_grouped_by_stint(laps_factory):
     # Second stint on fresh tyres is 1 s faster in S2; neither stint should be flagged.
     a = laps_factory(session="Q", n=10, noise=0.02, stint=1)
@@ -120,12 +133,42 @@ def test_outliers_grouped_by_stint(laps_factory):
     assert out["Included"].all()
 
 
+# Helper: a minimal official classification giving every driver the same best time.
+def official_best(df, best):
+    keys = df[["Year", "Event", "Session", "Driver"]].drop_duplicates()
+    return keys.assign(OfficialBest=best)
+
+
+# A qualifying lap faster than the official best is tagged not_counted.
+def test_quali_lap_faster_than_official_best_is_not_counted(laps_factory):
+    # São Paulo 2024: a green, non-deleted 1:25.035 in the feed, while the official best was
+    # 1:28.998. Any lap faster than the official best cannot have been counted.
+    df = laps_factory(session="Q")
+    official = official_best(df, df.loc[df["LapNumber"] != 4, "LapTime"].min())
+    df.loc[3, ["S1", "S2", "S3"]] -= 1.0
+    df.loc[3, "LapTime"] -= 3.0
+    out = clean_laps(df, official=official)
+    assert reason_of(out, 4) == "not_counted"
+    assert out["Included"].sum() == len(df) - 1
+    # The official best lap itself is kept, and without a classification nothing changes.
+    assert clean_laps(df)["Included"].all()
+
+
+# The not_counted rule never touches race laps.
+def test_not_counted_ignores_races(laps_factory):
+    df = laps_factory(session="R")
+    out = clean_laps(df, official=official_best(df, 0.0))
+    assert "not_counted" not in set(out["ExcludeReason"])
+
+
+# Identical values score 0 instead of dividing by zero; a clear outlier scores > 3.5.
 def test_robust_z_handles_zero_spread():
     assert (robust_z(pd.Series([1.0, 1.0, 1.0, 1.0])) == 0).all()
     z = robust_z(pd.Series([1.0, 1.1, 0.9, 1.0, 5.0]))
     assert z.iloc[-1] > 3.5
 
 
+# The cleaning log adds up to the lap count and counts imputed laps that are used.
 def test_cleaning_log_counts_every_lap(laps_factory):
     df = laps_factory(session="R")
     df.loc[4, "InPit"] = True
@@ -141,6 +184,7 @@ def test_cleaning_log_counts_every_lap(laps_factory):
     assert log.loc[~log["Reason"].str.startswith("imputed"), "Laps"].sum() == len(df)
 
 
+# An imputed lap that is excluded is counted as imputed, not as used.
 def test_cleaning_log_separates_imputed_laps_that_are_excluded(laps_factory):
     df = laps_factory(session="R")
     df.loc[0, "S1"] = np.nan  # lap 1: imputed, then excluded as a standing start

@@ -5,13 +5,15 @@ usable) so the exclusions can be audited and filtered downstream, for example in
 Rules run in order and the first match wins:
 
 1. ``deleted``        lap time removed by race control (track limits)
-2. ``pit_in_out``     in lap or out lap
-3. ``track_status``   any yellow, safety car, VSC or red flag during the lap
-4. ``standing_start`` lap 1 of a race or sprint
-5. ``missing_timing`` a time is still missing after imputation
-6. ``timing_mismatch`` S1 + S2 + S3 disagrees with the lap time
-7. ``slow_lap``       slower than 107% of the driver's best clean lap in that session
-8. ``sector_outlier`` a sector whose robust (median/MAD) z score is above the threshold on the slow side,
+2. ``not_counted``    qualifying lap faster than the driver's best official time, so it was
+                      not counted (only when the official classification is supplied)
+3. ``pit_in_out``     in lap or out lap
+4. ``track_status``   any yellow, safety car, VSC or red flag during the lap
+5. ``standing_start`` lap 1 of a race or sprint
+6. ``missing_timing`` a time is still missing after imputation
+7. ``timing_mismatch`` S1 + S2 + S3 disagrees with the lap time
+8. ``slow_lap``       slower than 107% of the driver's best clean lap in that session
+9. ``sector_outlier`` a sector whose robust (median/MAD) z score is above the threshold on the slow side,
                       computed per driver and stint
 
 Imputation: when exactly one of S1, S2, S3 and LapTime is missing, it is rebuilt from
@@ -31,6 +33,7 @@ DRIVER_KEYS = SESSION_KEYS + ["Driver"]
 # FastF1 TrackStatus codes: 1 green, 2 yellow, 4 safety car, 5 red, 6 VSC, 7 VSC ending.
 NON_GREEN = set("24567")
 RACE_SESSIONS = {"R", "S"}
+QUALI_SESSIONS = {"Q", "SQ"}
 
 SLOW_LAP_FACTOR = 1.07
 MISMATCH_TOLERANCE_S = 0.1
@@ -42,6 +45,7 @@ MAD_FLOOR_S = 0.05
 MIN_GROUP_FOR_STINT = 5
 
 
+# Clean step: rebuild a lap's one missing time (S1, S2, S3 or LapTime) from the other three.
 def impute_single_missing(df: pd.DataFrame) -> pd.DataFrame:
     """Fill a lap's one missing timing value from the other three."""
     df = df.copy()
@@ -65,6 +69,7 @@ def impute_single_missing(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# Clean helper: median/MAD z score for one group of sector times, with the MAD floored.
 def robust_z(x: pd.Series, mad_floor: float = MAD_FLOOR_S) -> pd.Series:
     """Median/MAD z score, with the MAD floored. Zeros when the group is too small."""
     med = x.median()
@@ -74,6 +79,7 @@ def robust_z(x: pd.Series, mad_floor: float = MAD_FLOOR_S) -> pd.Series:
     return 0.6745 * (x - med) / mad
 
 
+# Clean rule 9: flag laps with a sector far slower than the driver's usual for that stint.
 def _sector_outliers(df: pd.DataFrame, candidates: pd.Series, z: float) -> pd.Series:
     """True for candidate laps with any sector more than ``z`` robust SDs slower than usual.
 
@@ -96,18 +102,38 @@ def _sector_outliers(df: pd.DataFrame, candidates: pd.Series, z: float) -> pd.Se
     return flagged.reindex(df.index, fill_value=False)
 
 
+# Clean rule 2: flag qualifying laps faster than the driver's official best (never counted).
+def _not_counted(df: pd.DataFrame, official: pd.DataFrame | None) -> pd.Series:
+    """Qualifying laps faster than the driver's best official time.
+
+    Every counted lap is at least as slow as the official best, so a faster lap was not
+    counted: deleted without a lap number FastF1 could match, or completed after a red flag.
+    """
+    if official is None:
+        return pd.Series(False, index=df.index)
+    best = df[DRIVER_KEYS].merge(official[DRIVER_KEYS + ["OfficialBest"]], on=DRIVER_KEYS,
+                                 how="left")["OfficialBest"].to_numpy()
+    return df["Session"].isin(QUALI_SESSIONS) & (df["LapTime"] < best - 0.0005)
+
+
+# Clean step: impute, then tag every lap with the first exclusion rule it breaks ('' = used).
 def clean_laps(
     laps: pd.DataFrame,
     slow_factor: float = SLOW_LAP_FACTOR,
     outlier_z: float = OUTLIER_Z,
+    official: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
+    """Tag every lap. ``official`` is the classification from ``load.results_to_frame``;
+    without it the ``not_counted`` rule is skipped."""
     df = impute_single_missing(laps.reset_index(drop=True))
     reason = pd.Series("", index=df.index, dtype=object)
 
+    # Write a reason only on laps that have none yet, so the first matching rule wins.
     def tag(mask: pd.Series, label: str) -> None:
         reason[mask & (reason == "")] = label
 
     tag(df["Deleted"], "deleted")
+    tag(_not_counted(df, official), "not_counted")
     tag(df["InPit"], "pit_in_out")
     tag(df["TrackStatus"].map(lambda s: bool(NON_GREEN & set(s))), "track_status")
     tag(df["Session"].isin(RACE_SESSIONS) & (df["LapNumber"] == 1), "standing_start")
@@ -126,6 +152,7 @@ def clean_laps(
     return df
 
 
+# Audit output: lap counts per session and exclusion reason, plus imputed and imputed-used counts.
 def cleaning_log(df: pd.DataFrame) -> pd.DataFrame:
     """Lap counts per session and exclusion reason, plus imputation counts.
 

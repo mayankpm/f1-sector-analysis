@@ -11,8 +11,10 @@ from f1sector.aggregate import (
     driver_summary, sector_long, sector_summary, session_comparison, stint_trends,
 )
 from f1sector.clean import clean_laps, cleaning_log
+from f1sector.validate import reconcile
 
 
+# Export contract: every output table of one run; each field except laps becomes a CSV.
 @dataclass
 class Results:
     laps: pd.DataFrame
@@ -22,13 +24,20 @@ class Results:
     stint_trends: pd.DataFrame
     session_comparison: pd.DataFrame
     cleaning_log: pd.DataFrame
+    source_validation: pd.DataFrame | None = None
 
+    # Export helper: the tables to write, skipping the internal laps frame and any table not built.
     def tables(self) -> dict[str, pd.DataFrame]:
-        return {name: getattr(self, name) for name in self.__dataclass_fields__ if name != "laps"}
+        return {name: getattr(self, name) for name in self.__dataclass_fields__
+                if name != "laps" and getattr(self, name) is not None}
 
 
-def analyse(raw: pd.DataFrame, **clean_kwargs) -> Results:
-    laps = clean_laps(raw, **clean_kwargs)
+# Pipeline wiring: clean the raw laps, build every summary table and the source checks.
+def analyse(raw: pd.DataFrame, classification: pd.DataFrame | None = None,
+            **clean_kwargs) -> Results:
+    """``classification`` (from ``load.load_sessions``) enables the ``not_counted`` rule and
+    the reconciliation in ``source_validation``."""
+    laps = clean_laps(raw, official=classification, **clean_kwargs)
     summary = sector_summary(laps)
     return Results(
         laps=laps,
@@ -38,9 +47,11 @@ def analyse(raw: pd.DataFrame, **clean_kwargs) -> Results:
         stint_trends=stint_trends(laps),
         session_comparison=session_comparison(summary),
         cleaning_log=cleaning_log(laps),
+        source_validation=None if classification is None else reconcile(raw, classification),
     )
 
 
+# Export step: write each table as <name>.csv (4 decimals) and return the paths.
 def write_csvs(results: Results, out_dir: str | Path) -> list[Path]:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)

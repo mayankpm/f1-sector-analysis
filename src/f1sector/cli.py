@@ -8,8 +8,10 @@ from pathlib import Path
 
 from f1sector.export import analyse, write_csvs
 from f1sector.load import enable_cache, load_sessions
+from f1sector.validate import summarize
 
 
+# Entry point helper: read events, sessions, folders and cleaning thresholds from the command line.
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="f1sector", description=__doc__)
     p.add_argument("--year", type=int, required=True)
@@ -26,14 +28,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+# Entry point: load -> analyse -> write CSVs -> optional charts -> print a summary.
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
                         format="%(levelname)s %(message)s")
     enable_cache(args.cache)
     sessions = args.session or ["Q", "R"]
-    raw = load_sessions(args.year, args.event, sessions)
-    results = analyse(raw, slow_factor=args.slow_factor, outlier_z=args.outlier_z)
+    raw, classification = load_sessions(args.year, args.event, sessions)
+    results = analyse(raw, classification, slow_factor=args.slow_factor, outlier_z=args.outlier_z)
     for path in write_csvs(results, args.out):
         print(f"wrote {path}")
 
@@ -58,4 +61,6 @@ def main(argv: list[str] | None = None) -> int:
     included = log.loc[log["Reason"] == "included", "Laps"].sum()
     total = len(results.laps)
     print(f"{total} laps loaded, {included} used for pace ({total - included} excluded)")
+    print("checks against the official classification:")
+    print(summarize(results.source_validation).to_string())
     return 0
